@@ -1,13 +1,21 @@
 # python2.7
 
-import sys
 import json
+import random
+import argparse
 
 from twisted.words.protocols import irc
 from twisted.internet import protocol
 from twisted.internet.task import LoopingCall
 from twisted.internet import reactor
 
+
+"""
+    - be able to make commands from the chat (like !command theCommand 'what to write').
+        - only the mods of the channel can do it
+        - useful for links etc
+        - have them in a .json file
+"""
 
 
 class Bot( irc.IRCClient ):
@@ -23,6 +31,11 @@ class Bot( irc.IRCClient ):
     username = property( _get_username )
     nickname = username
     password = property( _get_password )
+
+
+    def __init__( self ):
+
+        self.last_random_number = 1     # used when sending a message
 
 
     def signedOn( self ):
@@ -55,18 +68,27 @@ class Bot( irc.IRCClient ):
         if not user:
             return
 
-            # private message to the bot
-        #if channel == self.nickname:
-        #    self.msg( self.factory.channel, 'hello there' )
+            # the command depends on what word we're counting
+        firstLetter = self.word_to_count[ 0 ]
 
+        if '!{}pm'.format( firstLetter ) in message:
 
-        if self.nickname in message:
-            self.msg( self.factory.channel, message )
+            average = self.getAverageOccurrences()
+
+            self.sendMessage( self.factory.channel, '{} per minute (average): {:.3f}'.format( self.word_to_count, average ) )
+
+        elif '!help' in message:
+
+            self.sendMessage( self.factory.channel, 'Commands: !{}pm'.format( firstLetter ) )
 
 
         self.count_occurrences += message.count( self.word_to_count )
 
 
+
+    def getAverageOccurrences( self ):
+
+        return float( self.total_count_occurrences ) / float( self.total_rounds )
 
 
     def printOccurrencesPerMinute( self ):
@@ -74,13 +96,31 @@ class Bot( irc.IRCClient ):
         self.total_count_occurrences += self.count_occurrences
         self.total_rounds += 1
 
-        average = float( self.total_count_occurrences ) / float( self.total_rounds )
+        average = self.getAverageOccurrences()
 
-
-        self.msg( self.factory.channel, '{} Per Minute: {} // Average: {}'.format( self.word_to_count, self.count_occurrences, average ) )
+        self.sendMessage( self.factory.channel, '{} Per Minute: {} // Average: {:.3f}'.format( self.word_to_count, self.count_occurrences, average ) )
 
         self.count_occurrences = 0
 
+
+
+    def sendMessage( self, channel, message ):
+
+        """
+            Add a random string at the end, so that the message is always different than the one before (even if we're sending the same 'message' twice)
+        """
+
+        randomNumber = random.randint( 0, 9 )
+
+        if randomNumber == self.last_random_number:
+            randomNumber += 1
+
+        if randomNumber > 9:
+            randomNumber = 0
+
+        randomString = '%' + str( randomNumber ) + '% - '
+
+        self.msg( channel, randomString + message )
 
 
 
@@ -113,7 +153,13 @@ class BotFactory( protocol.ClientFactory ):
 
 if __name__ == '__main__':
 
-    with open( 'config.json', 'r' ) as f:
+    parser = argparse.ArgumentParser( description= 'Chat Bot.' )
+
+    parser.add_argument( 'configPath', help= 'Path to the configuration file.', nargs= '?', default= 'config.json' )
+
+    args = parser.parse_args()
+
+    with open( args.configPath, 'r' ) as f:
         content = f.read()
 
     contentJson = json.loads( content )
@@ -123,7 +169,6 @@ if __name__ == '__main__':
     password = str( contentJson[ 'password' ] )
     server = str( contentJson[ 'server' ] )
     channel = str( contentJson[ 'channel' ] )
-
 
 
     reactor.connectTCP( server, 6667, BotFactory( channel, username, password ), timeout= 2 )

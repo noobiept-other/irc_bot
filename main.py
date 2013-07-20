@@ -1,8 +1,11 @@
 # python2.7
 
+import sys
 import json
 import random
 import argparse
+import signal
+import re
 
 from twisted.words.protocols import irc
 from twisted.internet import protocol
@@ -11,10 +14,24 @@ from twisted.internet import reactor
 
 
 """
+    requirements:
+        - python 2.7
+        - twisted
+        - zope.interface
+
     - be able to make commands from the chat (like !command theCommand 'what to write').
         - only the mods of the channel can do it
         - useful for links etc
         - have them in a .json file
+
+        - be able to join more than 1 channel (add in the config.json an array for multiple channels, or if just one channel a string)
+        - be able to change the title !title "the title"
+        - have the words to count per minute in the config.json in an array, and it automatically counts for all the ones there
+        - the !help says all the commands (and is automatically, instead of having to update the string manually)
+
+    Issues:
+
+        - not quitting correctly
 """
 
 
@@ -37,6 +54,25 @@ class Bot( irc.IRCClient ):
 
         self.last_random_number = 1     # used when sending a message
 
+        try:
+            with open( 'commands.json', 'r' ) as f:
+                commands = f.read()
+
+        except IOError:
+            self.commands = {}
+
+        else:
+            try:
+                self.commands = json.loads( commands )
+
+            except ValueError:
+                self.commands = {}
+
+
+        self.builtin_commands = {
+            '!help': self.printHelpText,
+            '!byebye': self.stopBot
+            }
 
     def signedOn( self ):
 
@@ -77,9 +113,23 @@ class Bot( irc.IRCClient ):
 
             self.sendMessage( self.factory.channel, '{} per minute (average): {:.3f}'.format( self.word_to_count, average ) )
 
-        elif '!help' in message:
+        elif message in self.commands:
+            self.sendMessage( self.factory.channel, self.commands[ message ] )
 
-            self.sendMessage( self.factory.channel, 'Commands: !{}pm'.format( firstLetter ) )
+
+        for builtInCommand in self.builtin_commands:
+
+            if builtInCommand in message:
+
+                self.builtin_commands[ builtInCommand ]()
+
+
+
+        match = re.search( r'!command !(\w+) (.+)', message )
+
+        if match:
+            self.addCommand( '!' + match.group( 1 ), match.group( 2 ) )
+
 
 
         self.count_occurrences += message.count( self.word_to_count )
@@ -104,6 +154,13 @@ class Bot( irc.IRCClient ):
 
 
 
+    def addCommand( self, command, response ):
+
+        self.commands[ command ] = response
+
+
+
+
     def sendMessage( self, channel, message ):
 
         """
@@ -124,6 +181,32 @@ class Bot( irc.IRCClient ):
 
 
 
+    def printHelpText( self ):
+
+        self.sendMessage( self.factory.channel, '!help -- something' )
+
+
+
+    def stopBot( self ):
+
+        self.save()
+        reactor.stop()
+
+        sys.exit()
+
+
+
+    def save( self ):
+        """
+            Call when exiting the program
+        """
+
+        with open( 'commands.json', 'w' ) as f:
+            json.dump( self.commands, f )
+
+
+
+
 
 
 class BotFactory( protocol.ClientFactory ):
@@ -137,6 +220,18 @@ class BotFactory( protocol.ClientFactory ):
         self.password = password
 
 
+    def buildProtocol( self, addr ):
+        """
+            Override to get a reference to the protocol/bot object in the factory
+        """
+
+        proto = protocol.ClientFactory.buildProtocol( self, addr )
+
+        self.bot = proto
+
+        return proto
+
+
     def clientConnectionLost( self, connector, reason ):
 
         print 'Lost Connection {}, reconnecting.'.format( reason )
@@ -148,6 +243,8 @@ class BotFactory( protocol.ClientFactory ):
     def clientConnectionFailed( self, connector, reason ):
 
         print 'Could not connect: {}'.format( reason )
+
+
 
 
 
@@ -171,5 +268,29 @@ if __name__ == '__main__':
     channel = str( contentJson[ 'channel' ] )
 
 
-    reactor.connectTCP( server, 6667, BotFactory( channel, username, password ), timeout= 2 )
+    botFactory = BotFactory( channel, username, password )
+
+
+    def signal_handler( signal, frame ):
+        """
+            Close the program with ctrl + c
+
+            Saves and stops twisted
+        """
+
+        try:
+            botFactory.bot.save()
+
+        except AttributeError:  # in case .bot attribute isn't set yet
+            print 'test'
+            pass
+
+        reactor.stop()
+        sys.exit()
+
+
+        # catch sigint (ctrl + c), and save then
+    signal.signal( signal.SIGINT, signal_handler )
+
+    reactor.connectTCP( server, 6667, botFactory, timeout= 2 )
     reactor.run()

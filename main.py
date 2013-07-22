@@ -71,6 +71,8 @@ class Bot( irc.IRCClient ):
 
         self.builtin_commands = {
             '!help': self.printHelpText,
+            '!topic': self.setTopic,
+            '!command': self.addCommand,
             '!byebye': self.stopBot
             }
 
@@ -121,15 +123,7 @@ class Bot( irc.IRCClient ):
 
             if builtInCommand in message:
 
-                self.builtin_commands[ builtInCommand ]()
-
-
-
-        match = re.search( r'!command !(\w+) (.+)', message )
-
-        if match:
-            self.addCommand( '!' + match.group( 1 ), match.group( 2 ) )
-
+                self.builtin_commands[ builtInCommand ]( message )
 
 
         self.count_occurrences += message.count( self.word_to_count )
@@ -148,16 +142,9 @@ class Bot( irc.IRCClient ):
 
         average = self.getAverageOccurrences()
 
-        self.sendMessage( self.factory.channel, '{} Per Minute: {} // Average: {:.3f}'.format( self.word_to_count, self.count_occurrences, average ) )
+        #self.sendMessage( self.factory.channel, '{} Per Minute: {} // Average: {:.3f}'.format( self.word_to_count, self.count_occurrences, average ) )
 
         self.count_occurrences = 0
-
-
-
-    def addCommand( self, command, response ):
-
-        self.commands[ command ] = response
-
 
 
 
@@ -175,24 +162,11 @@ class Bot( irc.IRCClient ):
         if randomNumber > 9:
             randomNumber = 0
 
+        self.last_random_number = randomNumber
+
         randomString = '%' + str( randomNumber ) + '% - '
 
         self.msg( channel, randomString + message )
-
-
-
-    def printHelpText( self ):
-
-        self.sendMessage( self.factory.channel, '!help -- something' )
-
-
-
-    def stopBot( self ):
-
-        self.save()
-        reactor.stop()
-
-        sys.exit()
 
 
 
@@ -203,6 +177,48 @@ class Bot( irc.IRCClient ):
 
         with open( 'commands.json', 'w' ) as f:
             json.dump( self.commands, f )
+
+
+
+    ### --- builtin commands --- ###
+
+    def printHelpText( self, message ):
+
+        self.sendMessage( self.factory.channel, '!help -- something' )
+
+
+    def setTopic( self, message ):
+
+        match = re.search( r'!topic (.+)', message )
+
+        if match:
+            topic = match.group( 1 )
+
+            self.topic( self.factory.channel, topic )
+
+        else:
+
+            self.sendMessage( self.factory.channel, 'Invalid syntax, write: !topic something like this' )
+
+
+    def addCommand( self, message ):
+
+        match = re.search( r'!command !(\w+) (.+)', message )
+
+        if match:
+            self.commands[ '!' + match.group( 1 ) ] = match.group( 2 )
+
+        else:
+
+            self.sendMessage( self.factory.channel, 'Invalid syntax, write: !command !theCommand what to say in response' )
+
+
+    def stopBot( self, message ):
+
+        self.save()
+        reactor.stop()
+
+        sys.exit()
 
 
 

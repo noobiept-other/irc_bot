@@ -24,14 +24,28 @@ from twisted.internet import reactor
         - useful for links etc
         - have them in a .json file
 
-        - be able to join more than 1 channel (add in the config.json an array for multiple channels, or if just one channel a string)
         - be able to change the title !title "the title"
-        - have the words to count per minute in the config.json in an array, and it automatically counts for all the ones there
         - the !help says all the commands (and is automatically, instead of having to update the string manually)
+        - block links in chat (and be able to exclude some)
+        -use pyside, and show there the chat, and also be able to write messages with the bots account through there
 
+        - check all the words and give a top5 words (say message, started x time ago, top 5 words, to call press !command)
+
+        - tell the uptime (time it is working)
+
+        - count per minute:
+            - since the program start (what is now)
+            - highest since start
+            - last minute?..
+        
     Issues:
 
         - not quitting correctly
+
+        ## use mode() -- http://twistedmatrix.com/documents/current/api/twisted.words.protocols.irc.IRCClient.html#mode
+
+        - PySide doesnt seem to play well with twisted (the event loops...)
+            need to have a different program with pyside, and communicate with sockets or something (interprocess communication)
 """
 
 
@@ -53,6 +67,22 @@ class Bot( irc.IRCClient ):
     def __init__( self ):
 
         self.last_random_number = 1     # used when sending a message
+        self.minutes_passed = 0
+        self.commands = {}
+        self.builtin_commands = {
+            '!help'    : self.printHelpText,
+            '!topic'   : self.setTopic,
+            '!command' : self.addCommand
+            }
+        self.words_to_count = {}
+
+
+
+    def init( self ):
+        """
+            This is not in __init__() because when that runs the properties of factory aren't accessible yet (self.factory.config for example)
+        """
+
 
         try:
             with open( 'commands.json', 'r' ) as f:
@@ -69,16 +99,22 @@ class Bot( irc.IRCClient ):
                 self.commands = {}
 
 
-        self.builtin_commands = {
-            '!help': self.printHelpText,
-            '!topic': self.setTopic,
-            '!command': self.addCommand,
-            '!byebye': self.stopBot
-            }
+        for countWord in self.factory.config[ 'count_per_minute' ]:
+            self.words_to_count[ countWord[ 'word' ] ] = {
+                    'command': countWord[ 'command' ],
+                    'count_occurrences': 0,     # in each minute
+                    'total_count_occurrences': 0
+                }
+
+
 
     def signedOn( self ):
 
-        self.join( self.factory.channel )
+        self.init()
+
+        for channel in self.factory.channels:
+
+            self.join( channel )
 
         print 'Signed on as {}'.format( self.nickname )
 
@@ -88,12 +124,7 @@ class Bot( irc.IRCClient ):
 
         print 'Joined {}'.format( channel )
 
-        self.count_occurrences = 0
-        self.word_to_count = 'something'
-        self.total_rounds = 0
-        self.total_count_occurrences = 0
-
-        LoopingCall( self.printOccurrencesPerMinute ).start( 10, now= False )
+        LoopingCall( self.updateWordsCount ).start( 60, now= False )
 
 
     def privmsg( self, user, channel, message ):
@@ -106,19 +137,28 @@ class Bot( irc.IRCClient ):
         if not user:
             return
 
-            # the command depends on what word we're counting
-        firstLetter = self.word_to_count[ 0 ]
 
-        if '!{}pm'.format( firstLetter ) in message:
+            # count of words per minute
+        for word, stuff in self.words_to_count.items():
 
-            average = self.getAverageOccurrences()
+            command = stuff[ 'command' ]
 
-            self.sendMessage( self.factory.channel, '{} per minute (average): {:.3f}'.format( self.word_to_count, average ) )
+            if command in message:
 
-        elif message in self.commands:
-            self.sendMessage( self.factory.channel, self.commands[ message ] )
+                average = self.getAverageOccurrences( stuff[ 'total_count_occurrences' ] )
+
+                self.sendMessage( channel, '{} per minute (average): {:.3f}'.format( word, average ) )
 
 
+                # count the occurrences #HERE need to identify a word?.. right now counts even if not a word (for example testtest)
+            stuff[ 'count_occurrences' ] += message.count( word )
+
+
+            # custom messages/commands
+        if message in self.commands:
+            self.sendMessage( channel, self.commands[ message ] )
+
+            # builtin commands
         for builtInCommand in self.builtin_commands:
 
             if builtInCommand in message:
@@ -126,25 +166,25 @@ class Bot( irc.IRCClient ):
                 self.builtin_commands[ builtInCommand ]( message )
 
 
-        self.count_occurrences += message.count( self.word_to_count )
+
+    def updateWordsCount( self ):
+
+        self.minutes_passed += 1
+
+        for word, stuff in self.words_to_count.items():
+
+            stuff[ 'total_count_occurrences' ] += stuff[ 'count_occurrences' ]
+            stuff[ 'count_occurrences' ] = 0
 
 
 
-    def getAverageOccurrences( self ):
+    def getAverageOccurrences( self, total_count ):
 
-        return float( self.total_count_occurrences ) / float( self.total_rounds )
+        if self.minutes_passed == 0:
+            return 0
 
+        return float( total_count ) / float( self.minutes_passed )
 
-    def printOccurrencesPerMinute( self ):
-
-        self.total_count_occurrences += self.count_occurrences
-        self.total_rounds += 1
-
-        average = self.getAverageOccurrences()
-
-        #self.sendMessage( self.factory.channel, '{} Per Minute: {} // Average: {:.3f}'.format( self.word_to_count, self.count_occurrences, average ) )
-
-        self.count_occurrences = 0
 
 
 
@@ -166,7 +206,9 @@ class Bot( irc.IRCClient ):
 
         randomString = '%' + str( randomNumber ) + '% - '
 
-        self.msg( channel, randomString + message )
+        finalMessage = randomString + message
+
+        self.msg( channel, str( finalMessage ) )
 
 
 
@@ -175,15 +217,15 @@ class Bot( irc.IRCClient ):
             Call when exiting the program
         """
 
-        with open( 'commands.json', 'w' ) as f:
-            json.dump( self.commands, f )
+        with open( 'commands.json', 'w' ) as commandsFile:
+            json.dump( self.commands, commandsFile )
 
 
 
     ### --- builtin commands --- ###
 
     def printHelpText( self, message ):
-
+        #HERE
         self.sendMessage( self.factory.channel, '!help -- something' )
 
 
@@ -229,11 +271,12 @@ class BotFactory( protocol.ClientFactory ):
 
     protocol = Bot
 
-    def __init__( self, channel, username, password ):
+    def __init__( self, config ):
 
-        self.channel = channel
-        self.username = username
-        self.password = password
+        self.config = config
+        self.username = config[ 'username' ]
+        self.password = config[ 'password' ]
+        self.channels = config[ 'channels' ]
 
 
     def buildProtocol( self, addr ):
@@ -263,6 +306,23 @@ class BotFactory( protocol.ClientFactory ):
 
 
 
+def fromUnicodeToStr( config ):
+
+    """
+        twisted doesn't like unicode, so gotta convert everything
+    """
+
+    config[ 'username' ] = str( config[ 'username' ] )
+    config[ 'password' ] = str( config[ 'password' ] )
+    config[ 'server' ] = str( config[ 'server' ] )
+
+    for position, channel in enumerate( config[ 'channels' ] ):
+
+        config[ 'channels' ][ position ] = str( channel )
+
+
+    return config
+
 
 if __name__ == '__main__':
 
@@ -275,19 +335,17 @@ if __name__ == '__main__':
     with open( args.configPath, 'r' ) as f:
         content = f.read()
 
-    contentJson = json.loads( content )
-
-        # twisted doesn't like unicode
-    username = str( contentJson[ 'username' ] )
-    password = str( contentJson[ 'password' ] )
-    server = str( contentJson[ 'server' ] )
-    channel = str( contentJson[ 'channel' ] )
+    configJson = json.loads( content )
 
 
-    botFactory = BotFactory( channel, username, password )
+    configJson = fromUnicodeToStr( configJson )
+
+    server = configJson[ 'server' ]
+
+    botFactory = BotFactory( configJson )
 
 
-    def signal_handler( signal, frame ):
+    def signal_handler( theSignal, frame ):
         """
             Close the program with ctrl + c
 

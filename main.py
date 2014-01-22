@@ -6,6 +6,7 @@ import random
 import argparse
 import signal
 import re
+import datetime
 
 from twisted.words.protocols import irc
 from twisted.internet import protocol
@@ -20,18 +21,13 @@ from twisted.internet import reactor
         - zope.interface
 
     - be able to make commands from the chat (like !command theCommand 'what to write').
-        - only the mods of the channel can do it
-        - useful for links etc
-        - have them in a .json file
+        - only the mods of the channel can do it (need to find out how to identify if the user is a mod or not)
 
-        - be able to change the title !title "the title"
         - the !help says all the commands (and is automatically, instead of having to update the string manually)
         - block links in chat (and be able to exclude some)
         -use pyside, and show there the chat, and also be able to write messages with the bots account through there
 
         - check all the words and give a top5 words (say message, started x time ago, top 5 words, to call press !command)
-
-        - tell the uptime (time it is working)
 
         - count per minute:
             - since the program start (what is now)
@@ -41,8 +37,6 @@ from twisted.internet import reactor
     Issues:
 
         - not quitting correctly
-
-        ## use mode() -- http://twistedmatrix.com/documents/current/api/twisted.words.protocols.irc.IRCClient.html#mode
 
         - PySide doesnt seem to play well with twisted (the event loops...)
             need to have a different program with pyside, and communicate with sockets or something (interprocess communication)
@@ -69,12 +63,14 @@ class Bot( irc.IRCClient ):
         self.last_random_number = 1     # used when sending a message
         self.minutes_passed = 0
         self.commands = {}
-        self.builtin_commands = {
+        self.builtin_commands = {       # receives as arguments: channel, message
             '!help'    : self.printHelpText,
             '!topic'   : self.setTopic,
-            '!command' : self.addCommand
+            '!command' : self.addCommand,
+            '!time'    : self.timePassed
             }
         self.words_to_count = {}
+        self.time_passed = None
 
 
 
@@ -111,6 +107,7 @@ class Bot( irc.IRCClient ):
     def signedOn( self ):
 
         self.init()
+        self.time_passed = TimePassed()
 
         for channel in self.factory.channels:
 
@@ -125,6 +122,7 @@ class Bot( irc.IRCClient ):
         print 'Joined {}'.format( channel )
 
         LoopingCall( self.updateWordsCount ).start( 60, now= False )
+
 
 
     def privmsg( self, user, channel, message ):
@@ -163,7 +161,7 @@ class Bot( irc.IRCClient ):
 
             if builtInCommand in message:
 
-                self.builtin_commands[ builtInCommand ]( message )
+                self.builtin_commands[ builtInCommand ]( channel, message )
 
 
 
@@ -224,26 +222,31 @@ class Bot( irc.IRCClient ):
 
     ### --- builtin commands --- ###
 
-    def printHelpText( self, message ):
+    def printHelpText( self, channel, message ):
         #HERE
         self.sendMessage( self.factory.channel, '!help -- something' )
 
 
-    def setTopic( self, message ):
+    def setTopic( self, channel, message ):
 
         match = re.search( r'!topic (.+)', message )
 
         if match:
             topic = match.group( 1 )
 
-            self.topic( self.factory.channel, topic )
+            self.topic( channel, topic )
 
         else:
 
-            self.sendMessage( self.factory.channel, 'Invalid syntax, write: !topic something like this' )
+            self.sendMessage( channel, 'Invalid syntax, write: !topic something like this' )
 
 
-    def addCommand( self, message ):
+    def timePassed( self, channel, message ):
+
+        self.sendMessage( channel, self.time_passed.getTimePassed() )
+
+
+    def addCommand( self, channel, message ):
 
         match = re.search( r'!command !(\w+) (.+)', message )
 
@@ -252,7 +255,7 @@ class Bot( irc.IRCClient ):
 
         else:
 
-            self.sendMessage( self.factory.channel, 'Invalid syntax, write: !command !theCommand what to say in response' )
+            self.sendMessage( channel, 'Invalid syntax, write: !command !theCommand what to say in response' )
 
 
     def stopBot( self, message ):
@@ -322,6 +325,29 @@ def fromUnicodeToStr( config ):
 
 
     return config
+
+
+
+
+class TimePassed:
+
+    def __init__(self):
+
+        self.initial_time = datetime.datetime.now()
+
+    def getTimePassed(self):
+
+        current = datetime.datetime.now()
+
+        difference = current - self.initial_time
+
+        totalSeconds = difference.total_seconds()
+        #HERE have a better string
+        return str( difference )
+
+
+
+
 
 
 if __name__ == '__main__':

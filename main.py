@@ -7,6 +7,7 @@ import argparse
 import signal
 import re
 import datetime
+from collections import Counter
 
 from twisted.words.protocols import irc
 from twisted.internet import protocol
@@ -26,8 +27,6 @@ from twisted.internet import reactor
         - the !help says all the commands (and is automatically, instead of having to update the string manually)
         - block links in chat (and be able to exclude some)
         -use pyside, and show there the chat, and also be able to write messages with the bots account through there
-
-        - check all the words and give a top5 words (say message, started x time ago, top 5 words, to call press !command)
 
     Issues:
 
@@ -62,10 +61,12 @@ class Bot( irc.IRCClient ):
             '!help'    : self.printHelpText,
             '!topic'   : self.setTopic,
             '!command' : self.addCommand,
-            '!time'    : self.timePassed
+            '!time'    : self.timePassed,
+            '!top5'    : self.getTopFive
             }
         self.words_to_count = {}
         self.time_passed = None
+        self.counter = Counter()
 
 
 
@@ -163,6 +164,11 @@ class Bot( irc.IRCClient ):
                 self.builtin_commands[ builtInCommand ]( channel, message )
 
 
+            # count the occurrence of all words, to get a top5
+        splitWords = message.split()
+
+        self.counter.update( splitWords )
+
 
     def updateWordsCount( self ):
 
@@ -248,6 +254,28 @@ class Bot( irc.IRCClient ):
     def timePassed( self, channel, message ):
 
         self.sendMessage( channel, self.time_passed.getTimePassed() )
+
+
+    def getTopFive( self, channel, message ):
+
+        top5 = self.counter.most_common( 5 )
+
+        response = 'Top 5: '
+
+        for element in top5:
+            word = element[ 0 ]
+            times = element[ 1 ]
+            plural = 's'
+
+            if times == 1:
+                plural = ''
+
+            response += '{} {} time{}, '.format( word, times, plural )
+
+
+            # remove the last comma and space ', '
+        response = response[ :-2 ]
+        self.sendMessage( channel, response )
 
 
     def addCommand( self, channel, message ):

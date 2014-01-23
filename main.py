@@ -29,11 +29,6 @@ from twisted.internet import reactor
 
         - check all the words and give a top5 words (say message, started x time ago, top 5 words, to call press !command)
 
-        - count per minute:
-            - since the program start (what is now)
-            - highest since start
-            - last minute?..
-        
     Issues:
 
         - not quitting correctly
@@ -99,7 +94,8 @@ class Bot( irc.IRCClient ):
             self.words_to_count[ countWord[ 'word' ] ] = {
                     'command': countWord[ 'command' ],
                     'count_occurrences': 0,     # in each minute
-                    'total_count_occurrences': 0
+                    'total_count_occurrences': 0,
+                    'highest': 0                # highest word per minute
                 }
 
 
@@ -113,6 +109,7 @@ class Bot( irc.IRCClient ):
 
             self.join( channel )
 
+        LoopingCall( self.updateWordsCount ).start( 60, now= False )
         print 'Signed on as {}'.format( self.nickname )
 
 
@@ -121,8 +118,8 @@ class Bot( irc.IRCClient ):
 
         print 'Joined {}'.format( channel )
 
-        LoopingCall( self.updateWordsCount ).start( 60, now= False )
-
+        #LoopingCall( self.updateWordsCount ).start( 60, now= False )
+            #HERE its being set per channel, so if join 2 channels, its called 2 times but our variables are general, assume its all 1 channel... its not working for multiple channels
 
 
     def privmsg( self, user, channel, message ):
@@ -139,17 +136,19 @@ class Bot( irc.IRCClient ):
             # count of words per minute
         for word, stuff in self.words_to_count.items():
 
+                # count the occurrences #HERE it counts even when there's symbols next to the word, for example !word $word
+            allOccurrences = re.findall( r'\b{}\b'.format( word ), message )
+            stuff[ 'count_occurrences' ] += len( allOccurrences )
+
             command = stuff[ 'command' ]
 
             if command in message:
 
                 average = self.getAverageOccurrences( stuff[ 'total_count_occurrences' ] )
+                highest = stuff[ 'highest' ]
+                last = stuff[ 'count_occurrences' ]
 
-                self.sendMessage( channel, '{} per minute (average): {:.3f}'.format( word, average ) )
-
-
-                # count the occurrences #HERE need to identify a word?.. right now counts even if not a word (for example testtest)
-            stuff[ 'count_occurrences' ] += message.count( word )
+                self.sendMessage( channel, '{word} per minute -- last minute: {last:.3f} / average: {average:.3f} / highest: {highest:.3f}'.format( word=word, average=average, highest=highest, last=last ) )
 
 
             # custom messages/commands
@@ -171,7 +170,12 @@ class Bot( irc.IRCClient ):
 
         for word, stuff in self.words_to_count.items():
 
-            stuff[ 'total_count_occurrences' ] += stuff[ 'count_occurrences' ]
+            count = stuff[ 'count_occurrences' ]
+
+            if count > stuff[ 'highest' ]:
+                stuff[ 'highest' ] = count
+
+            stuff[ 'total_count_occurrences' ] += count
             stuff[ 'count_occurrences' ] = 0
 
 

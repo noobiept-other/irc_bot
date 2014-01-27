@@ -21,12 +21,16 @@ from twisted.internet import reactor
         - twisted
         - zope.interface
 
-    - be able to make commands from the chat (like !command theCommand 'what to write').
-        - only the mods of the channel can do it (need to find out how to identify if the user is a mod or not)
+    - need to be able to identify which users are mods since only them should:
+        - add !command
+        - change title
+        - etc
 
-        - the !help says all the commands (and is automatically, instead of having to update the string manually)
-        - block links in chat (and be able to exclude some)
-        -use pyside, and show there the chat, and also be able to write messages with the bots account through there
+    - block links in chat (and be able to exclude some)
+
+    - the !help says all the commands (and is automatically, instead of having to update the string manually)
+
+    -use pyside, and show there the chat, and also be able to write messages with the bots account through there
 
     Issues:
 
@@ -233,8 +237,26 @@ class Bot( irc.IRCClient ):
     ### --- builtin commands --- ###
 
     def printHelpText( self, channel, message ):
-        #HERE
-        self.sendMessage( self.factory.channel, '!help -- something' )
+
+        helpMessage = 'Commands: '
+
+            # add the builtin commands
+        for command in self.builtin_commands:
+            helpMessage += command + ', '
+
+            # the custom commands
+        for command in self.commands:
+            helpMessage += command + ', '
+
+            # and the words to count commands
+        for word, stuff in self.words_to_count.items():
+            command = stuff[ 'command' ]
+            helpMessage += command + ', '
+
+            # remove the last comma and space
+        helpMessage = helpMessage[ :-2 ]
+
+        self.sendMessage( channel, helpMessage )
 
 
     def setTopic( self, channel, message ):
@@ -253,7 +275,9 @@ class Bot( irc.IRCClient ):
 
     def timePassed( self, channel, message ):
 
-        self.sendMessage( channel, self.time_passed.getTimePassed() )
+        timeMessage = 'Uptime: {}'.format( self.time_passed.getTimePassed() )
+
+        self.sendMessage( channel, timeMessage )
 
 
     def getTopFive( self, channel, message ):

@@ -28,13 +28,11 @@ from twisted.internet import reactor
 
     - block links in chat (and be able to exclude some)
 
-    - the !help says all the commands (and is automatically, instead of having to update the string manually)
-
     -use pyside, and show there the chat, and also be able to write messages with the bots account through there
 
     Issues:
 
-        - not quitting correctly
+        - not quitting correctly (maybe has to do with the function we override in the factory... 'clientConnectionLost()')
 
         - PySide doesnt seem to play well with twisted (the event loops...)
             need to have a different program with pyside, and communicate with sockets or something (interprocess communication)
@@ -58,9 +56,7 @@ class Bot( irc.IRCClient ):
 
     def __init__( self ):
 
-        self.last_random_number = 1     # used when sending a message
-        self.minutes_passed = 0
-        self.commands = {}
+        self.channels = {}
         self.builtin_commands = {       # receives as arguments: channel, message
             '!help'    : self.printHelpText,
             '!topic'   : self.setTopic,
@@ -68,10 +64,6 @@ class Bot( irc.IRCClient ):
             '!time'    : self.timePassed,
             '!top5'    : self.getTopFive
             }
-        self.words_to_count = {}
-        self.time_passed = None
-        self.counter = Counter()
-
 
 
     def init( self ):
@@ -79,42 +71,61 @@ class Bot( irc.IRCClient ):
             This is not in __init__() because when that runs the properties of factory aren't accessible yet (self.factory.config for example)
         """
 
-
         try:
-            with open( 'commands.json', 'r' ) as f:
-                commands = f.read()
+            with open( 'commands.json', 'r' ) as commandsFile:
+                commands = commandsFile.read()
 
         except IOError:
-            self.commands = {}
+            commands = {}
 
         else:
             try:
-                self.commands = json.loads( commands )
+                commands = json.loads( commands )
 
             except ValueError:
-                self.commands = {}
+                commands = {}
 
 
-        for countWord in self.factory.config[ 'count_per_minute' ]:
-            self.words_to_count[ countWord[ 'word' ] ] = {
-                    'command': countWord[ 'command' ],
-                    'count_occurrences': 0,     # in each minute
-                    'total_count_occurrences': 0,
-                    'highest': 0                # highest word per minute
+        for channel in self.factory.channels:
+
+            try:
+                channelCommands = commands[ channel ]
+
+            except KeyError:
+                channelCommands = {}
+
+            wordsToCount = {}
+
+            for countWord in self.factory.config[ 'count_per_minute' ]:
+                wordsToCount[ countWord[ 'word' ] ] = {
+                        'command': countWord[ 'command' ],
+                        'count_occurrences': 0,     # in each minute
+                        'total_count_occurrences': 0,
+                        'highest': 0                # highest word per minute
+                    }
+
+
+            self.channels[ channel ] = {
+                    'last_random_number': 1,    # used when sending a message
+                    'minutes_passed': 0,
+                    'commands': channelCommands,
+                    'words_to_count': wordsToCount,
+                    'time_passed': TimePassed(),
+                    'counter': Counter()
                 }
+
+
 
 
 
     def signedOn( self ):
 
         self.init()
-        self.time_passed = TimePassed()
 
         for channel in self.factory.channels:
 
             self.join( channel )
 
-        LoopingCall( self.updateWordsCount ).start( 60, now= False )
         print 'Signed on as {}'.format( self.nickname )
 
 
@@ -123,8 +134,8 @@ class Bot( irc.IRCClient ):
 
         print 'Joined {}'.format( channel )
 
-        #LoopingCall( self.updateWordsCount ).start( 60, now= False )
-            #HERE its being set per channel, so if join 2 channels, its called 2 times but our variables are general, assume its all 1 channel... its not working for multiple channels
+        LoopingCall( lambda: self.updateWordsCount( channel ) ).start( 60, now= False )
+
 
 
     def privmsg( self, user, channel, message ):
@@ -137,9 +148,10 @@ class Bot( irc.IRCClient ):
         if not user:
             return
 
+        channelConfig = self.channels[ channel ]
 
             # count of words per minute
-        for word, stuff in self.words_to_count.items():
+        for word, stuff in channelConfig[ 'words_to_count' ].items():
 
                 # count the occurrences #HERE it counts even when there's symbols next to the word, for example !word $word
             allOccurrences = re.findall( r'\b{}\b'.format( word ), message )
@@ -149,7 +161,7 @@ class Bot( irc.IRCClient ):
 
             if command in message:
 
-                average = self.getAverageOccurrences( stuff[ 'total_count_occurrences' ] )
+                average = self.getAverageOccurrences( channel, stuff[ 'total_count_occurrences' ] )
                 highest = stuff[ 'highest' ]
                 last = stuff[ 'count_occurrences' ]
 
@@ -157,8 +169,8 @@ class Bot( irc.IRCClient ):
 
 
             # custom messages/commands
-        if message in self.commands:
-            self.sendMessage( channel, self.commands[ message ] )
+        if message in channelConfig[ 'commands' ]:
+            self.sendMessage( channel, channelConfig[ 'commands' ][ message ] )
 
             # builtin commands
         for builtInCommand in self.builtin_commands:
@@ -171,14 +183,16 @@ class Bot( irc.IRCClient ):
             # count the occurrence of all words, to get a top5
         splitWords = message.split()
 
-        self.counter.update( splitWords )
+        channelConfig[ 'counter' ].update( splitWords )
 
 
-    def updateWordsCount( self ):
+    def updateWordsCount( self, channel ):
 
-        self.minutes_passed += 1
+        channelData = self.channels[ channel ]
 
-        for word, stuff in self.words_to_count.items():
+        channelData[ 'minutes_passed' ] += 1
+
+        for word, stuff in channelData[ 'words_to_count' ].items():
 
             count = stuff[ 'count_occurrences' ]
 
@@ -190,12 +204,13 @@ class Bot( irc.IRCClient ):
 
 
 
-    def getAverageOccurrences( self, total_count ):
+    def getAverageOccurrences( self, channel, total_count ):
 
-        if self.minutes_passed == 0:
+        minutesPassed = self.channels[ channel ][ 'minutes_passed' ]
+        if minutesPassed == 0:
             return 0
 
-        return float( total_count ) / float( self.minutes_passed )
+        return float( total_count ) / float( minutesPassed )
 
 
 
@@ -206,15 +221,16 @@ class Bot( irc.IRCClient ):
             Add a random string at the end, so that the message is always different than the one before (even if we're sending the same 'message' twice)
         """
 
+        channelData = self.channels[ channel ]
         randomNumber = random.randint( 0, 9 )
 
-        if randomNumber == self.last_random_number:
+        if randomNumber == channelData[ 'last_random_number' ]:
             randomNumber += 1
 
         if randomNumber > 9:
             randomNumber = 0
 
-        self.last_random_number = randomNumber
+        channelData[ 'last_random_number' ] = randomNumber
 
         randomString = '%' + str( randomNumber ) + '% - '
 
@@ -229,8 +245,14 @@ class Bot( irc.IRCClient ):
             Call when exiting the program
         """
 
+        commands = {}
+
+        for channel, stuff in self.channels.items():
+
+            commands[ channel ] = stuff[ 'commands' ]
+
         with open( 'commands.json', 'w' ) as commandsFile:
-            json.dump( self.commands, commandsFile )
+            json.dump( commands, commandsFile )
 
 
 
@@ -238,6 +260,7 @@ class Bot( irc.IRCClient ):
 
     def printHelpText( self, channel, message ):
 
+        channelData = self.channels[ channel ]
         helpMessage = 'Commands: '
 
             # add the builtin commands
@@ -245,11 +268,11 @@ class Bot( irc.IRCClient ):
             helpMessage += command + ', '
 
             # the custom commands
-        for command in self.commands:
+        for command in channelData[ 'commands' ]:
             helpMessage += command + ', '
 
             # and the words to count commands
-        for word, stuff in self.words_to_count.items():
+        for word, stuff in channelData[ 'words_to_count' ].items():
             command = stuff[ 'command' ]
             helpMessage += command + ', '
 
@@ -275,14 +298,14 @@ class Bot( irc.IRCClient ):
 
     def timePassed( self, channel, message ):
 
-        timeMessage = 'Uptime: {}'.format( self.time_passed.getTimePassed() )
+        timeMessage = 'Uptime: {}'.format( self.channels[ channel ][ 'time_passed' ].getTimePassed() )
 
         self.sendMessage( channel, timeMessage )
 
 
     def getTopFive( self, channel, message ):
 
-        top5 = self.counter.most_common( 5 )
+        top5 = self.channels[ channel ][ 'counter' ].most_common( 5 )
 
         response = 'Top 5: '
 
@@ -307,7 +330,7 @@ class Bot( irc.IRCClient ):
         match = re.search( r'!command !(\w+) (.+)', message )
 
         if match:
-            self.commands[ '!' + match.group( 1 ) ] = match.group( 2 )
+            self.channels[ channel ][ 'commands' ][ '!' + match.group( 1 ) ] = match.group( 2 )
 
         else:
 

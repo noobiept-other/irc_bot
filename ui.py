@@ -4,7 +4,7 @@ import sys
 import json
 import socket
 
-from PySide.QtGui import QApplication, QLabel, QPushButton, QLineEdit, QGridLayout, QTextEdit, QWidget
+from PySide.QtGui import QApplication, QLabel, QPushButton, QLineEdit, QGridLayout, QTextEdit, QWidget, QCheckBox
 
 
 class Bot( QWidget ):
@@ -17,6 +17,7 @@ class Bot( QWidget ):
         channelLabel = QLabel( 'Channel' )
         writeMessage = QLineEdit()
         sendMessage = QPushButton( 'Send' )
+        printMessage = QCheckBox( 'Print Message' )
 
         showMessages.setReadOnly( True )
 
@@ -30,8 +31,10 @@ class Bot( QWidget ):
 
         messageLayout = QGridLayout()
 
-        messageLayout.addWidget( writeMessage, 0, 0 )
-        messageLayout.addWidget( sendMessage, 0, 1 )
+        messageLayout.addWidget( printMessage, 0, 0 )
+        messageLayout.addWidget( writeMessage, 0, 1 )
+        messageLayout.addWidget( sendMessage, 0, 2 )
+
 
         mainLayout = QGridLayout()
         mainLayout.addWidget( showMessages, 0, 0, 1, 2 )    # spans 2 columns
@@ -53,13 +56,14 @@ class Bot( QWidget ):
 
         self.channel_ui = channel
         self.writeMessage_ui = writeMessage
+        self.printMessage_ui = printMessage
 
 
     def sendMessage(self):
 
         message = self.writeMessage_ui.text()
         channel = self.channel_ui.text()
-        printMessage = True     #HERE add ui element
+        printMessage = self.printMessage_ui.isChecked()
 
         data = {
                 'message': str( message ),

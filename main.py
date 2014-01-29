@@ -1,4 +1,4 @@
-# python2.7
+# python 2.7
 
 import sys
 import json
@@ -6,7 +6,6 @@ import random
 import argparse
 import signal
 import re
-import datetime
 from collections import Counter
 
 from twisted.words.protocols import irc
@@ -14,6 +13,7 @@ from twisted.internet import protocol
 from twisted.internet.task import LoopingCall
 from twisted.internet import reactor
 
+import utilities
 
 """
     requirements:
@@ -110,7 +110,7 @@ class Bot( irc.IRCClient ):
                     'minutes_passed': 0,
                     'commands': channelCommands,
                     'words_to_count': wordsToCount,
-                    'time_passed': TimePassed(),
+                    'time_passed': utilities.TimePassed(),
                     'counter': Counter()
                 }
 
@@ -157,6 +157,25 @@ class Bot( irc.IRCClient ):
             allOccurrences = re.findall( r'\b{}\b'.format( word ), message )
             stuff[ 'count_occurrences' ] += len( allOccurrences )
 
+
+            # count the occurrence of all words, to get a top5
+        splitWords = message.split()
+
+        channelConfig[ 'counter' ].update( splitWords )
+
+        self.commands( channel, message )
+
+
+    def commands( self, channel, message ):
+
+        """
+            Executes whatever commands were found in the message
+        """
+        channelConfig = self.channels[ channel ]
+
+                    # count of words per minute
+        for word, stuff in channelConfig[ 'words_to_count' ].items():
+
             command = stuff[ 'command' ]
 
             if command in message:
@@ -179,11 +198,6 @@ class Bot( irc.IRCClient ):
 
                 self.builtin_commands[ builtInCommand ]( channel, message )
 
-
-            # count the occurrence of all words, to get a top5
-        splitWords = message.split()
-
-        channelConfig[ 'counter' ].update( splitWords )
 
 
     def updateWordsCount( self, channel ):
@@ -388,43 +402,37 @@ class BotFactory( protocol.ClientFactory ):
 
 
 
-def fromUnicodeToStr( config ):
 
-    """
-        twisted doesn't like unicode, so gotta convert everything
-    """
+class Ui( protocol.Protocol ):
 
-    config[ 'username' ] = str( config[ 'username' ] )
-    config[ 'password' ] = str( config[ 'password' ] )
-    config[ 'server' ] = str( config[ 'server' ] )
-
-    for position, channel in enumerate( config[ 'channels' ] ):
-
-        config[ 'channels' ][ position ] = str( channel )
+    def __init__(self, factory):
+        self.factory = factory
 
 
-    return config
+    def dataReceived(self, dataStr):
+
+        data = json.loads( dataStr )
+        bot = self.factory.bot_factory.bot
+
+        if data[ 'message' ]:
+
+            channel = str( data[ 'channel' ] )
+            message = str( data[ 'message' ] )
+
+            if data[ 'printMessage' ]:
+                bot.sendMessage( channel, message )
+
+            bot.commands( channel, message )
 
 
+class UiFactory( protocol.Factory ):
 
+    def __init__(self, bot_factory):
 
-class TimePassed:
+        self.bot_factory = bot_factory
 
-    def __init__(self):
-
-        self.initial_time = datetime.datetime.now()
-
-    def getTimePassed(self):
-
-        current = datetime.datetime.now()
-
-        difference = current - self.initial_time
-
-        totalSeconds = difference.total_seconds()
-        #HERE have a better string
-        return str( difference )
-
-
+    def buildProtocol(self, addr):
+        return Ui( self )
 
 
 
@@ -443,7 +451,7 @@ if __name__ == '__main__':
     configJson = json.loads( content )
 
 
-    configJson = fromUnicodeToStr( configJson )
+    configJson = utilities.fromUnicodeToStr( configJson )
 
     server = configJson[ 'server' ]
 
@@ -471,5 +479,8 @@ if __name__ == '__main__':
         # catch sigint (ctrl + c), and save then
     signal.signal( signal.SIGINT, signal_handler )
 
-    reactor.connectTCP( server, 6667, botFactory, timeout= 2 )
+    uiFactory = UiFactory( botFactory )
+
+    reactor.connectTCP( server, 6667, botFactory, timeout= 2 )  # client
+    reactor.listenTCP( 8001, uiFactory )  # server
     reactor.run()

@@ -9,6 +9,7 @@ Add a `config.json` file in the root directory, with this format.
         "password": "the_password",
         "server": "irc.server.pt",
         "channels": [ "#one", "#two" ],
+        "admins": [ "username" ],
         "count_per_minute:
             [
                 { "word": "test", "command": "!test" }

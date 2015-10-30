@@ -42,6 +42,9 @@ class Bot( irc.IRCClient ):
             '!top5'    : self.getTopFive
             }
 
+            # need to have admin rights to use these commands
+        self.admin_commands = [ '!command', '!topic' ]
+
 
     def init( self ):
         """
@@ -115,6 +118,7 @@ class Bot( irc.IRCClient ):
         if not user:
             return
 
+        username = user.split( '!' )[ 0 ]
         channelConfig = self.channels[ channel ]
 
             # count of words per minute
@@ -130,10 +134,10 @@ class Bot( irc.IRCClient ):
 
         channelConfig[ 'counter' ].update( splitWords )
 
-        self.commands( channel, message )
+        self.commands( channel, username, message )
 
 
-    def commands( self, channel, message ):
+    def commands( self, channel, username, message ):
         """
             Executes whatever commands were found in the message
         """
@@ -162,7 +166,8 @@ class Bot( irc.IRCClient ):
 
             if builtInCommand in message:
 
-                self.builtin_commands[ builtInCommand ]( channel, message )
+                if (not builtInCommand in self.admin_commands) or (username in self.factory.config[ 'admins' ]):
+                    self.builtin_commands[ builtInCommand ]( channel, message )
 
 
     def updateWordsCount( self, channel ):
@@ -305,7 +310,6 @@ class Bot( irc.IRCClient ):
             self.channels[ channel ][ 'commands' ][ '!' + match.group( 1 ) ] = match.group( 2 )
 
         else:
-
             self.sendMessage( channel, 'Invalid syntax, write: !command !theCommand what to say in response' )
 
 
@@ -333,7 +337,6 @@ class BotFactory( protocol.ClientFactory ):
         """
             Override to get a reference to the protocol/bot object in the factory
         """
-
         proto = protocol.ClientFactory.buildProtocol( self, addr )
 
         self.bot = proto
@@ -373,7 +376,7 @@ class Ui( protocol.Protocol ):
             if data[ 'printMessage' ]:
                 bot.sendMessage( channel, message )
 
-            bot.commands( channel, message )
+            bot.commands( channel, '', message )    #HERE
 
 
 class UiFactory( protocol.Factory ):

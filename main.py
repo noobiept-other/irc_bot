@@ -1,5 +1,6 @@
 # python 2.7
 
+from __future__ import print_function
 import sys
 import json
 import random
@@ -15,32 +16,8 @@ from twisted.internet import reactor
 
 import utilities
 
-"""
-    requirements:
-        - python 2.7
-        - twisted
-        - zope.interface
-
-    - need to be able to identify which users are mods since only them should:
-        - add !command
-        - change title
-        - etc
-
-    - block links in chat (and be able to exclude some)
-
-    -use pyside, and show there the chat, and also be able to write messages with the bots account through there
-
-    Issues:
-
-        - not quitting correctly (maybe has to do with the function we override in the factory... 'clientConnectionLost()')
-
-        - PySide doesnt seem to play well with twisted (the event loops...)
-            need to have a different program with pyside, and communicate with sockets or something (interprocess communication)
-"""
-
 
 class Bot( irc.IRCClient ):
-
 
     def _get_username( self ):
         return self.factory.username
@@ -70,7 +47,6 @@ class Bot( irc.IRCClient ):
         """
             This is not in __init__() because when that runs the properties of factory aren't accessible yet (self.factory.config for example)
         """
-
         try:
             with open( 'commands.json', 'r' ) as commandsFile:
                 commands = commandsFile.read()
@@ -104,7 +80,6 @@ class Bot( irc.IRCClient ):
                         'highest': 0                # highest word per minute
                     }
 
-
             self.channels[ channel ] = {
                     'last_random_number': 1,    # used when sending a message
                     'minutes_passed': 0,
@@ -115,9 +90,6 @@ class Bot( irc.IRCClient ):
                 }
 
 
-
-
-
     def signedOn( self ):
 
         self.init()
@@ -126,25 +98,20 @@ class Bot( irc.IRCClient ):
 
             self.join( channel )
 
-        print 'Signed on as {}'.format( self.nickname )
-
+        print( 'Signed on as {}'.format( self.nickname ) )
 
 
     def joined( self, channel ):
 
-        print 'Joined {}'.format( channel )
+        print( 'Joined {}'.format( channel ) )
 
         LoopingCall( lambda: self.updateWordsCount( channel ) ).start( 60, now= False )
-
 
 
     def privmsg( self, user, channel, message ):
         """
             This is called when the bot receives a message
         """
-
-        print message
-
         if not user:
             return
 
@@ -167,7 +134,6 @@ class Bot( irc.IRCClient ):
 
 
     def commands( self, channel, message ):
-
         """
             Executes whatever commands were found in the message
         """
@@ -199,7 +165,6 @@ class Bot( irc.IRCClient ):
                 self.builtin_commands[ builtInCommand ]( channel, message )
 
 
-
     def updateWordsCount( self, channel ):
 
         channelData = self.channels[ channel ]
@@ -217,7 +182,6 @@ class Bot( irc.IRCClient ):
             stuff[ 'count_occurrences' ] = 0
 
 
-
     def getAverageOccurrences( self, channel, total_count ):
 
         minutesPassed = self.channels[ channel ][ 'minutes_passed' ]
@@ -227,14 +191,10 @@ class Bot( irc.IRCClient ):
         return float( total_count ) / float( minutesPassed )
 
 
-
-
     def sendMessage( self, channel, message ):
-
         """
             Add a random string at the end, so that the message is always different than the one before (even if we're sending the same 'message' twice)
         """
-
         channelData = self.channels[ channel ]
         randomNumber = random.randint( 0, 9 )
 
@@ -253,12 +213,10 @@ class Bot( irc.IRCClient ):
         self.msg( channel, str( finalMessage ) )
 
 
-
     def save( self ):
         """
             Call when exiting the program
         """
-
         commands = {}
 
         for channel, stuff in self.channels.items():
@@ -269,8 +227,8 @@ class Bot( irc.IRCClient ):
             json.dump( commands, commandsFile )
 
 
-
     ### --- builtin commands --- ###
+
 
     def printHelpText( self, channel, message ):
 
@@ -359,10 +317,6 @@ class Bot( irc.IRCClient ):
         sys.exit()
 
 
-
-
-
-
 class BotFactory( protocol.ClientFactory ):
 
     protocol = Bot
@@ -389,18 +343,15 @@ class BotFactory( protocol.ClientFactory ):
 
     def clientConnectionLost( self, connector, reason ):
 
-        print 'Lost Connection {}, reconnecting.'.format( reason )
-        print reason.printTraceback()
+        print( 'Lost Connection {}, reconnecting.'.format( reason ) )
+        print( reason.printTraceback() )
 
         connector.connect()
 
 
     def clientConnectionFailed( self, connector, reason ):
 
-        print 'Could not connect: {}'.format( reason )
-
-
-
+        print( 'Could not connect: {}'.format( reason ) )
 
 
 class Ui( protocol.Protocol ):
@@ -435,8 +386,6 @@ class UiFactory( protocol.Factory ):
         return Ui( self )
 
 
-
-
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser( description= 'Chat Bot.' )
@@ -449,8 +398,6 @@ if __name__ == '__main__':
         content = f.read()
 
     configJson = json.loads( content )
-
-
     configJson = utilities.fromUnicodeToStr( configJson )
 
     server = configJson[ 'server' ]
@@ -469,7 +416,7 @@ if __name__ == '__main__':
             botFactory.bot.save()
 
         except AttributeError:  # in case .bot attribute isn't set yet
-            print 'test'
+            print( 'test' )
             pass
 
         reactor.stop()

@@ -13,8 +13,15 @@ Add a `config.json` file in the root directory, with this format.
         "count_per_minute:
             [
                 { "word": "test", "command": "!test" }
-            ]
+            ],
+        "commands": {
+            "#channelName": {
+                "!command": "response"
+            }    
+        }
     }
+    
+The `commands` can be added through the chat, with the `!add` command.
     
     
 Requirements

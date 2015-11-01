@@ -36,13 +36,14 @@ class Bot( irc.IRCClient ):
         self.builtin_commands = {       # receives as arguments: channel, message
             '!help'    : self.printHelpText,
             '!topic'   : self.setTopic,
-            '!command' : self.addCommand,
+            '!add'     : self.addCommand,
             '!time'    : self.timePassed,
             '!top5'    : self.getTopFive
             }
 
             # need to have admin rights to use these commands
-        self.admin_commands = [ '!command', '!topic' ]
+        self.admin_commands = [ '!add', '!topic' ]
+        self.regex = {}
 
 
     def init( self ):
@@ -50,6 +51,15 @@ class Bot( irc.IRCClient ):
             This is not in __init__() because when that runs the properties of factory aren't accessible yet (self.factory.config for example)
         """
         config = self.factory.config
+
+            # construct the regex pattern to be used later on to match the words to count
+            # word boundaries include punctuation characters, so we'll use negative look behind/look ahead to remove them
+        punctuation = re.escape( '!"#$%&\'()*+,-./:;<=>?@[\]^_`{|}~' )
+
+        for countInfo in config[ 'count_per_minute' ]:
+            word = countInfo[ 'word' ]
+            self.regex[ word ] = r'\b(?<![{}]){}(?![{}])\b'.format( punctuation, word, punctuation )
+
 
         for channel in config[ 'channels' ]:
 
@@ -109,8 +119,7 @@ class Bot( irc.IRCClient ):
             # count of words per minute
         for word, stuff in channelConfig[ 'words_to_count' ].items():
 
-                # count the occurrences #HERE it counts even when there's symbols next to the word, for example !word $word
-            allOccurrences = re.findall( r'\b{}\b'.format( word ), message )
+            allOccurrences = re.findall( self.regex[ word ], message )
             stuff[ 'count_occurrences' ] += len( allOccurrences )
 
 
@@ -275,7 +284,7 @@ class Bot( irc.IRCClient ):
 
     def addCommand( self, channel, message ):
 
-        match = re.search( r'!command !(\w+) (.+)', message )
+        match = re.search( r'!add !(\w+) (.+)', message )
 
         if match:
             command = '!' + match.group( 1 )
@@ -289,7 +298,7 @@ class Bot( irc.IRCClient ):
             self.save()
 
         else:
-            self.sendMessage( channel, 'Invalid syntax, write: !command !theCommand what to say in response' )
+            self.sendMessage( channel, 'Invalid syntax, write: !add !theCommand what to say in response' )
 
 
     def save( self ):

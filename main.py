@@ -5,7 +5,6 @@ import sys
 import json
 import random
 import argparse
-import signal
 import re
 from collections import Counter
 
@@ -20,10 +19,10 @@ import utilities
 class Bot( irc.IRCClient ):
 
     def _get_username( self ):
-        return self.factory.username
+        return self.factory.config[ 'username' ]
 
     def _get_password( self ):
-        return self.factory.password
+        return self.factory.config[ 'password' ]
 
 
     username = property( _get_username )
@@ -50,32 +49,19 @@ class Bot( irc.IRCClient ):
         """
             This is not in __init__() because when that runs the properties of factory aren't accessible yet (self.factory.config for example)
         """
-        try:
-            with open( 'commands.json', 'r' ) as commandsFile:
-                commands = commandsFile.read()
+        config = self.factory.config
 
-        except IOError:
-            commands = {}
-
-        else:
-            try:
-                commands = json.loads( commands )
-
-            except ValueError:
-                commands = {}
-
-
-        for channel in self.factory.channels:
+        for channel in config[ 'channels' ]:
 
             try:
-                channelCommands = commands[ channel ]
+                channelCommands = config[ 'commands' ][ channel ]
 
             except KeyError:
                 channelCommands = {}
 
             wordsToCount = {}
 
-            for countWord in self.factory.config[ 'count_per_minute' ]:
+            for countWord in config[ 'count_per_minute' ]:
                 wordsToCount[ countWord[ 'word' ] ] = {
                         'command': countWord[ 'command' ],
                         'count_occurrences': 0,     # in each minute
@@ -97,8 +83,7 @@ class Bot( irc.IRCClient ):
 
         self.init()
 
-        for channel in self.factory.channels:
-
+        for channel in self.factory.config[ 'channels' ]:
             self.join( channel )
 
         print( 'Signed on as {}'.format( self.nickname ) )
@@ -218,20 +203,6 @@ class Bot( irc.IRCClient ):
         self.msg( channel, str( finalMessage ) )
 
 
-    def save( self ):
-        """
-            Call when exiting the program
-        """
-        commands = {}
-
-        for channel, stuff in self.channels.items():
-
-            commands[ channel ] = stuff[ 'commands' ]
-
-        with open( 'commands.json', 'w' ) as commandsFile:
-            json.dump( commands, commandsFile )
-
-
     ### --- builtin commands --- ###
 
 
@@ -307,18 +278,26 @@ class Bot( irc.IRCClient ):
         match = re.search( r'!command !(\w+) (.+)', message )
 
         if match:
-            self.channels[ channel ][ 'commands' ][ '!' + match.group( 1 ) ] = match.group( 2 )
+            command = '!' + match.group( 1 )
+            response = match.group( 2 )
+
+            self.channels[ channel ][ 'commands' ][ command ] = response
+
+                # the dictionary may not be initialized yet
+            channelCommands = self.factory.config[ 'commands' ].setdefault( channel, {} )
+            channelCommands[ command ] = response
+            self.save()
 
         else:
             self.sendMessage( channel, 'Invalid syntax, write: !command !theCommand what to say in response' )
 
 
-    def stopBot( self, message ):
-
-        self.save()
-        reactor.stop()
-
-        sys.exit()
+    def save( self ):
+        """
+            Save the current configuration in memory to the `config.json` file.
+        """
+        with open( 'config.json', 'w' ) as f:
+            json.dump( self.factory.config, f, indent= 4 )
 
 
 class BotFactory( protocol.ClientFactory ):
@@ -326,11 +305,7 @@ class BotFactory( protocol.ClientFactory ):
     protocol = Bot
 
     def __init__( self, config ):
-
         self.config = config
-        self.username = config[ 'username' ]
-        self.password = config[ 'password' ]
-        self.channels = config[ 'channels' ]
 
 
     def buildProtocol( self, addr ):
@@ -398,37 +373,21 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     with open( args.configPath, 'r' ) as f:
-        content = f.read()
+        configJson = json.load( f )
 
-    configJson = json.loads( content )
-    configJson = utilities.fromUnicodeToStr( configJson )
+        # `twisted` doesn't like `unicode` in some configuration values
+        # need to convert to `str`
+    configJson[ 'username' ] = str( configJson[ 'username' ] )
+    configJson[ 'password' ] = str( configJson[ 'password' ] )
+    configJson[ 'server' ] = str( configJson[ 'server' ] )
+
+    for index, channel in enumerate( configJson[ 'channels' ] ):
+        configJson[ 'channels' ][ index ] = str( channel )
+
 
     server = configJson[ 'server' ]
 
     botFactory = BotFactory( configJson )
-
-
-    def signal_handler( theSignal, frame ):
-        """
-            Close the program with ctrl + c
-
-            Saves and stops twisted
-        """
-
-        try:
-            botFactory.bot.save()
-
-        except AttributeError:  # in case .bot attribute isn't set yet
-            print( 'test' )
-            pass
-
-        reactor.stop()
-        sys.exit()
-
-
-        # catch sigint (ctrl + c), and save then
-    signal.signal( signal.SIGINT, signal_handler )
-
     uiFactory = UiFactory( botFactory )
 
     reactor.connectTCP( server, 6667, botFactory, timeout= 2 )  # client

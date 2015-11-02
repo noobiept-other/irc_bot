@@ -148,7 +148,7 @@ class Bot( irc.IRCClient ):
                 highest = stuff[ 'highest' ]
                 last = stuff[ 'count_occurrences' ]
 
-                self.sendMessage( channel, '{word} per minute -- last minute: {last:.3f} / average: {average:.3f} / highest: {highest:.3f}'.format( word=word, average=average, highest=highest, last=last ) )
+                self.sendMessage( channel, '{word} per minute -- last minute: {last} / average: {average:.2f} / highest: {highest}'.format( word=word, average=average, highest=highest, last=last ) )
 
 
             # custom messages/commands
@@ -192,24 +192,26 @@ class Bot( irc.IRCClient ):
 
     def sendMessage( self, channel, message ):
         """
-            Add a random string at the end, so that the message is always different than the one before (even if we're sending the same 'message' twice)
+            If the `random_message` option is set, add a random string at the end, so that the message is always different than the one before (even if we're sending the same 'message' twice).
+            Otherwise just send the given message.
         """
-        channelData = self.channels[ channel ]
-        randomNumber = random.randint( 0, 9 )
+        if not self.factory.config[ 'random_message' ]:
+            self.msg( channel, str( message ) )
 
-        if randomNumber == channelData[ 'last_random_number' ]:
-            randomNumber += 1
+        else:
+            channelData = self.channels[ channel ]
+            randomNumber = random.randint( 0, 9 )
 
-        if randomNumber > 9:
-            randomNumber = 0
+            if randomNumber == channelData[ 'last_random_number' ]:
+                randomNumber += 1
 
-        channelData[ 'last_random_number' ] = randomNumber
+            if randomNumber > 9:
+                randomNumber = 0
 
-        randomString = '%' + str( randomNumber ) + '% - '
+            channelData[ 'last_random_number' ] = randomNumber
+            finalMessage = '%{}% - {}'.format( randomNumber, message )
 
-        finalMessage = randomString + message
-
-        self.msg( channel, str( finalMessage ) )
+            self.msg( channel, str( finalMessage ) )
 
 
     ### --- builtin commands --- ###

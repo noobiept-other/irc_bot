@@ -42,6 +42,7 @@ Commands
 - `!topic <the topic>` -- Change the topic of the channel (requires `moderator` rights).
 - `!help` -- Prints a list off all the available commands in that channel.
 - `!add <!command> <response>` -- Add custom commands to that channel (requires `moderator` rights).
+- `!remove <!command>` -- Remove a previously added command (requires `moderator` rights).
 - There may be other custom commands added with the `!add` command, depends on each channel.
       
     

@@ -36,12 +36,13 @@ class Bot( irc.IRCClient ):
             '!help'    : self.printHelpText,
             '!topic'   : self.setTopic,
             '!add'     : self.addCommand,
+            '!remove'  : self.removeCommand,
             '!time'    : self.timePassed,
             '!top5'    : self.getTopFive
             }
 
             # need to have admin rights to use these commands
-        self.admin_commands = [ '!add', '!topic' ]
+        self.admin_commands = [ '!add', '!remove', '!topic' ]
         self.regex = {}
 
 
@@ -62,12 +63,6 @@ class Bot( irc.IRCClient ):
 
         for channel in config[ 'channels' ]:
 
-            try:
-                channelCommands = config[ 'commands' ][ channel ]
-
-            except KeyError:
-                channelCommands = {}
-
             wordsToCount = {}
 
             for countWord in config[ 'count_per_minute' ]:
@@ -81,7 +76,6 @@ class Bot( irc.IRCClient ):
             self.channels[ channel ] = {
                     'last_random_number': 1,    # used when sending a message
                     'minutes_passed': 0,
-                    'commands': channelCommands,
                     'words_to_count': wordsToCount,
                     'time_passed': utilities.TimePassed(),
                     'counter': Counter()
@@ -134,6 +128,7 @@ class Bot( irc.IRCClient ):
         """
             Executes whatever commands were found in the message
         """
+        config = self.factory.config
         channelConfig = self.channels[ channel ]
 
                     # count of words per minute
@@ -151,8 +146,12 @@ class Bot( irc.IRCClient ):
 
 
             # custom messages/commands
-        if message in channelConfig[ 'commands' ]:
-            self.sendMessage( channel, channelConfig[ 'commands' ][ message ] )
+        commands = config[ 'commands' ].get( channel, {} )
+
+        for command, response in commands.items():
+            if command in message:
+                self.sendMessage( channel, response )
+
 
             # builtin commands
         for builtInCommand in self.builtin_commands:
@@ -219,6 +218,7 @@ class Bot( irc.IRCClient ):
     def printHelpText( self, channel, message ):
 
         channelData = self.channels[ channel ]
+        config = self.factory.config
         helpMessage = 'Commands: '
 
             # add the builtin commands
@@ -226,7 +226,7 @@ class Bot( irc.IRCClient ):
             helpMessage += command + ', '
 
             # the custom commands
-        for command in channelData[ 'commands' ]:
+        for command in config[ 'commands' ][ channel ]:
             helpMessage += command + ', '
 
             # and the words to count commands
@@ -291,15 +291,35 @@ class Bot( irc.IRCClient ):
             command = '!' + match.group( 1 )
             response = match.group( 2 )
 
-            self.channels[ channel ][ 'commands' ][ command ] = response
-
                 # the dictionary may not be initialized yet
             channelCommands = self.factory.config[ 'commands' ].setdefault( channel, {} )
             channelCommands[ command ] = response
             self.save()
+            self.sendMessage( channel, '"{}" added!'.format( command ) )
 
         else:
             self.sendMessage( channel, 'Invalid syntax, write: !add !theCommand what to say in response' )
+
+
+    def removeCommand( self, channel, message ):
+
+        match = re.search( r'!remove !(\w+)', message )
+
+        if match:
+            command = '!' + match.group( 1 )
+
+            commands = self.factory.config[ 'commands' ].get( channel, {} )
+
+            if command in commands:
+                del commands[ command ]
+                self.save()
+                self.sendMessage( channel, '"{}" removed!'.format( command ) )
+
+            else:
+                self.sendMessage( channel, 'Failed to remove "{}".'.format( command ) )
+
+        else:
+            self.sendMessage( channel, 'Invalid syntax, write: !remove !theCommand' )
 
 
     def save( self ):

@@ -25,6 +25,14 @@ Add a `config.json` file in the root directory, with this format.
 The `commands` can be added through the chat, with the `!add` command.
     
     
+Run
+===
+   
+    
+- `python main.py` -- If the config file is named `config.json`. 
+- `python main.py specify_config_name.json` -- To use a different one.
+   
+    
 Commands
 ========
 
@@ -35,7 +43,7 @@ Commands
 - `!help` -- Prints a list off all the available commands in that channel.
 - `!add <!command> <response>` -- Add custom commands to that channel (requires `moderator` rights).
 - There may be other custom commands added with the `!add` command, depends on each channel.
-    
+      
     
 Requirements
 ============

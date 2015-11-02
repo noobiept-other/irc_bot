@@ -1,7 +1,6 @@
 # python 2.7
 
 from __future__ import print_function
-import sys
 import json
 import random
 import argparse
@@ -343,42 +342,10 @@ class BotFactory( protocol.ClientFactory ):
         print( 'Could not connect: {}'.format( reason ) )
 
 
-class Ui( protocol.Protocol ):
-
-    def __init__(self, factory):
-        self.factory = factory
-
-
-    def dataReceived(self, dataStr):
-
-        data = json.loads( dataStr )
-        bot = self.factory.bot_factory.bot
-
-        if data[ 'message' ]:
-
-            channel = str( data[ 'channel' ] )
-            message = str( data[ 'message' ] )
-
-            if data[ 'printMessage' ]:
-                bot.sendMessage( channel, message )
-
-            bot.commands( channel, '', message )    #HERE
-
-
-class UiFactory( protocol.Factory ):
-
-    def __init__(self, bot_factory):
-
-        self.bot_factory = bot_factory
-
-    def buildProtocol(self, addr):
-        return Ui( self )
-
 
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser( description= 'Chat Bot.' )
-
     parser.add_argument( 'configPath', help= 'Path to the configuration file.', nargs= '?', default= 'config.json' )
 
     args = parser.parse_args()
@@ -395,12 +362,8 @@ if __name__ == '__main__':
     for index, channel in enumerate( configJson[ 'channels' ] ):
         configJson[ 'channels' ][ index ] = str( channel )
 
-
     server = configJson[ 'server' ]
-
     botFactory = BotFactory( configJson )
-    uiFactory = UiFactory( botFactory )
 
     reactor.connectTCP( server, 6667, botFactory, timeout= 2 )  # client
-    reactor.listenTCP( 8001, uiFactory )  # server
     reactor.run()

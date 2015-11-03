@@ -44,6 +44,7 @@ class Bot( irc.IRCClient ):
             # need to have admin rights to use these commands
         self.admin_commands = [ '!add', '!remove', '!topic' ]
         self.regex = {}
+        self.last_random_number = 0
 
 
     def init( self ):
@@ -74,7 +75,6 @@ class Bot( irc.IRCClient ):
                     }
 
             self.channels[ channel ] = {
-                    'last_random_number': 1,    # used when sending a message
                     'minutes_passed': 0,
                     'words_to_count': wordsToCount,
                     'time_passed': utilities.TimePassed(),
@@ -109,6 +109,7 @@ class Bot( irc.IRCClient ):
         username = user.split( '!' )[ 0 ]
         channelConfig = self.channels[ channel ]
 
+
             # count of words per minute
         for word, stuff in channelConfig[ 'words_to_count' ].items():
 
@@ -131,7 +132,16 @@ class Bot( irc.IRCClient ):
         config = self.factory.config
         channelConfig = self.channels[ channel ]
 
-                    # count of words per minute
+            # builtin commands
+        for builtInCommand in self.builtin_commands:
+
+            if builtInCommand in message:
+
+                if (not builtInCommand in self.admin_commands) or (username in self.factory.config[ 'admins' ]):
+                    self.builtin_commands[ builtInCommand ]( channel, message )
+                    return
+
+            # count of words per minute
         for word, stuff in channelConfig[ 'words_to_count' ].items():
 
             command = stuff[ 'command' ]
@@ -143,7 +153,7 @@ class Bot( irc.IRCClient ):
                 last = stuff[ 'count_occurrences' ]
 
                 self.sendMessage( channel, '{word} per minute -- last minute: {last} / average: {average:.2f} / highest: {highest}'.format( word=word, average=average, highest=highest, last=last ) )
-
+                return
 
             # custom messages/commands
         commands = config[ 'commands' ].get( channel, {} )
@@ -151,15 +161,7 @@ class Bot( irc.IRCClient ):
         for command, response in commands.items():
             if command in message:
                 self.sendMessage( channel, response )
-
-
-            # builtin commands
-        for builtInCommand in self.builtin_commands:
-
-            if builtInCommand in message:
-
-                if (not builtInCommand in self.admin_commands) or (username in self.factory.config[ 'admins' ]):
-                    self.builtin_commands[ builtInCommand ]( channel, message )
+                return
 
 
     def updateWordsCount( self, channel ):
@@ -197,16 +199,15 @@ class Bot( irc.IRCClient ):
             self.msg( channel, str( message ) )
 
         else:
-            channelData = self.channels[ channel ]
             randomNumber = random.randint( 0, 9 )
 
-            if randomNumber == channelData[ 'last_random_number' ]:
+            if randomNumber == self.last_random_number:
                 randomNumber += 1
 
             if randomNumber > 9:
                 randomNumber = 0
 
-            channelData[ 'last_random_number' ] = randomNumber
+            self.last_random_number = randomNumber
             finalMessage = '%{}% - {}'.format( randomNumber, message )
 
             self.msg( channel, str( finalMessage ) )
@@ -275,10 +276,10 @@ class Bot( irc.IRCClient ):
             if times == 1:
                 plural = ''
 
-            response += '{} {} time{}, '.format( word, times, plural )
+            response += '"{}" {} time{} / '.format( word, times, plural )
 
 
-            # remove the last comma and space ', '
+            # remove the last slash and space '/ '
         response = response[ :-2 ]
         self.sendMessage( channel, response )
 

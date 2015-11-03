@@ -1,3 +1,6 @@
+An irc bot that can count the rate that some words are being written in the chat. Also able to save some messages that can be brought back  given the appropriate command.
+
+
 Configuration
 =============
 
@@ -22,7 +25,7 @@ Add a `config.json` file in the root directory, with this format.
         }
     }
     
-The `commands` can be added through the chat, with the `!add` command.
+The `commands` can be added through the chat, with the `!add` command (or removed with the `!remove` command).
     
     
 Run
